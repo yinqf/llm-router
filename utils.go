@@ -27,7 +27,6 @@ var hopByHopHeaders = []string{
 // readResponse buffers the upstream response so we can reuse it on retry or final response.
 func readResponse(resp *http.Response) (*cachedResponse, error) {
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +50,7 @@ func writeResponse(w http.ResponseWriter, resp *cachedResponse) {
 	}
 }
 
-func copyStream(dst http.ResponseWriter, src io.ReadCloser) error {
-	defer src.Close()
+func copyStream(dst http.ResponseWriter, src io.Reader) error {
 	buf := make([]byte, 32*1024)
 	flusher, _ := dst.(http.Flusher)
 	for {
@@ -286,4 +284,13 @@ func cloneDefaultTransport() *http.Transport {
 		return &http.Transport{}
 	}
 	return base.Clone()
+}
+
+func closeBody(body io.Closer, hint string) {
+	if body == nil {
+		return
+	}
+	if err := body.Close(); err != nil {
+		log.Printf("[proxy] close %s failed: %v", hint, err)
+	}
 }

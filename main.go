@@ -135,7 +135,9 @@ func handleChatCompletion(c *gin.Context, cfg *proxyConfig) {
 				copyHeaders(c.Writer.Header(), resp.Header)
 				stripHopByHopHeaders(c.Writer.Header())
 				c.Writer.WriteHeader(resp.StatusCode)
-				if err := copyStream(c.Writer, resp.Body); err != nil {
+				err := copyStream(c.Writer, resp.Body)
+				closeBody(resp.Body, "stream response")
+				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						log.Printf("[proxy] stream canceled")
 						return
@@ -146,6 +148,7 @@ func handleChatCompletion(c *gin.Context, cfg *proxyConfig) {
 			}
 
 			candidate, readErr := readResponse(resp)
+			closeBody(resp.Body, "stream error response")
 			if readErr != nil {
 				lastErr = readErr
 				log.Printf("[proxy] read error response failed model=%s: %v", model, readErr)
@@ -163,6 +166,7 @@ func handleChatCompletion(c *gin.Context, cfg *proxyConfig) {
 		}
 
 		candidate, readErr := readResponse(resp)
+		closeBody(resp.Body, "response")
 		if readErr != nil {
 			lastErr = readErr
 			log.Printf("[proxy] read response failed model=%s: %v", model, readErr)
@@ -208,7 +212,9 @@ func readRequestPayload(c *gin.Context) (map[string]interface{}, bool) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return nil, false
 	}
-	c.Request.Body.Close()
+	if err := c.Request.Body.Close(); err != nil {
+		log.Printf("[proxy] close request body failed: %v", err)
+	}
 
 	if len(bodyBytes) == 0 {
 		log.Printf("[proxy] empty request body")
